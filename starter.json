@@ -1,0 +1,21 @@
+{
+  "name": "Dance Off",
+  "genre": "word",
+  "dim": "3D",
+  "mode": "Party",
+  "players": "2–8",
+  "hook": "Hit the arrows on the beat. Win the crowd's vote.",
+  "how": "Arrows slide in on the beat: hit the matching arrow and your dancer busts a move. Long streaks unlock bigger moves, from steps to spins to backflips. When the song ends, everyone votes for the best dancer (not themselves).",
+  "controls": "Arrow keys or WASD; on phones, tap the four arrow buttons",
+  "uses": [
+    ["Host-run rounds", "One player's browser counts in each song, runs the vote and counts it; if it leaves, the next player takes over."],
+    ["Leaderboard", "Each player's best score."],
+    ["Bots", "Bot dancers hit (and miss) along with you, and vote too, until enough people join."],
+    ["Live sync", "Every dancer's moves, streak and score show on every screen as they dance."]
+  ],
+  "ideas": [
+    "Give every dancer a hat they can pick before the song",
+    "Add hold arrows you have to keep pressed",
+    "Make the stage a beach at sunset"
+  ]
+}

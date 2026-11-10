@@ -1,0 +1,848 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dance Off</title>
+<style>
+  :root { --ink: #f6f2ff; --dim: #b0a8d6; --gold: #ffd23f; --pink: #ff5c8a; }
+  html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; background: #0b0718; }
+  body { font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); user-select: none; -webkit-user-select: none; }
+  canvas#world { display: block; touch-action: none; }
+  [hidden] { display: none !important; }
+  #tags { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+  .tag { position: absolute; left: 0; top: 0; transform-origin: 50% 100%; white-space: nowrap; font: 800 13px system-ui, sans-serif; text-shadow: 0 1px 3px #000c; padding: 1px 6px; border-radius: 8px; }
+  .tag.me { background: #ffd23fdd; color: #241a00; text-shadow: none; }
+  .hud { position: fixed; pointer-events: none; text-shadow: 0 1px 3px #000c; }
+  #info { top: max(8px, env(safe-area-inset-top)); left: max(10px, env(safe-area-inset-left)); padding: 6px 10px; border-radius: 12px; background: #0b0718b0; max-width: calc(100vw - 170px); }
+  #info:empty { display: none; }
+  #title { font: 900 20px system-ui, sans-serif; letter-spacing: .03em; }
+  #title b { color: var(--pink); }
+  #song { font-size: 12px; font-weight: 700; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #net { font-size: 12px; color: var(--dim); }
+  #net:empty, #song:empty { display: none; }
+  #ranks { top: max(8px, env(safe-area-inset-top)); right: max(10px, env(safe-area-inset-right)); width: 170px; font-size: 13px; }
+  #ranks div { display: flex; gap: 6px; align-items: center; padding: 3px 8px; margin-bottom: 3px; border-radius: 9px; background: #0b071899; }
+  #ranks div.me { box-shadow: inset 0 0 0 2px var(--gold); }
+  #ranks i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  #ranks b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+  #ranks span { font: 800 12px ui-monospace, Menlo, Consolas, monospace; }
+  #big { left: 0; right: 0; top: 30%; text-align: center; font: 900 min(22vw, 120px)/1 system-ui, sans-serif; color: var(--gold); -webkit-text-stroke: 3px #2a1a00; }
+  #toast { left: 0; right: 0; top: 18%; text-align: center; font: 900 26px system-ui, sans-serif; color: var(--gold); opacity: 0; transition: opacity .3s; }
+  #hint { left: 0; right: 0; text-align: center; font-weight: 700; font-size: 14px; color: var(--gold); padding: 0 12px; }
+  #pad { position: fixed; left: 50%; transform: translateX(-50%); bottom: max(10px, env(safe-area-inset-bottom)); width: min(720px, calc(100vw - 20px)); }
+  #track { display: block; width: 100%; height: 86px; border-radius: 16px; background: #0b0718cc; box-shadow: 0 0 0 1px #ffffff22; touch-action: none; }
+  #keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 8px; }
+  #keys button { min-height: 64px; border: 0; border-radius: 16px; background: #ffffff14; color: #fff; font: 900 30px system-ui, sans-serif; touch-action: none; box-shadow: inset 0 -4px 0 #0005; }
+  #keys button.lit { background: #ffffff3a; }
+  #vote { position: fixed; left: 50%; transform: translateX(-50%); bottom: max(10px, env(safe-area-inset-bottom)); width: min(560px, calc(100vw - 20px)); box-sizing: border-box; padding: 14px; border-radius: 18px; background: #1a1236ee; border: 1px solid #ffffff2a; text-align: center; }
+  #vote h2 { margin: 0 0 2px; font-size: 20px; } #vote p { margin: 0 0 10px; color: var(--dim); font-size: 13px; }
+  #choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+  #choices button { min-height: 52px; border: 2px solid #ffffff22; border-radius: 12px; background: #ffffff10; color: #fff; font: 800 14px system-ui, sans-serif; cursor: pointer; display: flex; align-items: center; gap: 8px; padding: 6px 10px; text-align: left; }
+  #choices button i { width: 12px; height: 12px; border-radius: 50%; flex: none; }
+  #choices button small { display: block; color: var(--dim); font-weight: 600; font-size: 11px; }
+  #choices button.on { border-color: var(--gold); background: #ffd23f2a; }
+  /* the results card sits to the side (or at the bottom on tall screens) so the winner stays in view */
+  #over { position: fixed; inset: 0; display: grid; place-items: center end; box-sizing: border-box; padding: 16px max(20px, env(safe-area-inset-right)) 16px 16px; background: linear-gradient(90deg, transparent 45%, #0b0718b0); }
+  @media (max-width: 759px) { #over { place-items: end center; padding: 16px 16px max(12px, env(safe-area-inset-bottom)); background: linear-gradient(180deg, transparent 35%, #0b0718b0); } #over .card { max-height: 60vh; } }
+  .card { box-sizing: border-box; width: min(380px, calc(100vw - 32px)); max-height: 86vh; overflow: auto; padding: 18px 20px; border-radius: 18px; background: #1a1236; border: 1px solid #ffffff2a; text-align: center; box-shadow: 0 0 50px #ff5c8a44; }
+  .card h2 { margin: 0 0 2px; font-size: 25px; } .card .sub { margin: 0 0 10px; color: var(--dim); font-size: 13px; }
+  .card h3 { margin: 14px 0 4px; font-size: 13px; color: var(--gold); text-align: left; text-transform: uppercase; letter-spacing: .06em; }
+  .card ol { margin: 0; padding-left: 24px; font-size: 14px; text-align: left; }
+  .card li { padding: 2px 0; } .card li span { float: right; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .card li small { display: block; color: var(--dim); font-size: 12px; } .card li.me { color: var(--gold); }
+  .card p { margin: 10px 0 0; font-size: 13px; opacity: .8; }
+  button.go { width: 100%; min-height: 48px; margin-top: 14px; border: 0; border-radius: 12px; background: var(--pink); color: #fff; font: 800 17px system-ui, sans-serif; cursor: pointer; }
+  @media (max-width: 600px) { #ranks { width: 132px; font-size: 12px; } #title { font-size: 17px; } }
+</style>
+<script src="https://cdn.multiplayeragent.com/sdk/mp.global.js"></script>
+<script type="importmap">{ "imports": { "three": "./libs/three.module.min.js" } }</script>
+</head>
+<body>
+<div id="tags"></div>
+<div class="hud" id="info"><div id="title">Dance <b>Off</b></div><div id="song"></div><div id="net">Connecting…</div></div>
+<div class="hud" id="ranks"></div>
+<div class="hud" id="big"></div>
+<div class="hud" id="toast"></div>
+<div class="hud" id="hint"></div>
+<div id="pad"><canvas id="track"></canvas><div id="keys" hidden><button data-d="0">◀</button><button data-d="1">▼</button><button data-d="2">▲</button><button data-d="3">▶</button></div></div>
+<div id="vote" hidden><h2>Who danced best?</h2><p id="voteSub"></p><div id="choices"></div></div>
+<div id="over" hidden><div class="card">
+  <h2 id="winner"></h2><div class="sub" id="winSub"></div><ol id="results"></ol>
+  <h3>High scores</h3><ol id="board"><li>Loading…</li></ol>
+  <button class="go" id="again">Play again</button><p id="next"></p>
+</div></div>
+<script type="module">
+/* ═══ DANCE OFF · a Multiplayer Agent starter ═════════════════════════════════════════
+ * Arrows slide in on the beat: hit the matching arrow and your 3D dancer busts a move.
+ * Keep a streak going to unlock bigger moves. Then everyone votes for the best dancer
+ * (not themselves). Party, 2–8 players; bots fill empty spots on the stage.
+ *
+ * WHERE THINGS ARE (search for the "── " headers):
+ *   CONFIG ........ timing windows, scoring, the streaks that unlock each tier of moves, bots
+ *   CONNECTION .... MP_CONNECT, joining, the offline room, who is host
+ *   SONG .......... the seeded song: tempo, chords, the beat and the arrows. Same seed = same
+ *                   song and the same arrows for everyone.
+ *   MUSIC ......... WebAudio: drums, bass and pads queued just ahead of the beat
+ *   STAGE ......... the club: light-up floor, back wall, beams, disco ball, confetti
+ *   DANCERS ....... the dancer model and its moves (one per arrow, bigger with each tier)
+ *   ROUND (HOST) .. the phases (count, dance, vote, done), the bots' dancing and votes, the
+ *                   vote count. Only the host writes these.
+ *   MY DANCE ...... judging your arrows, streak, score; your vote
+ *   HUD ........... the arrow track, rankings, vote card, results card, leaderboard
+ *   INPUT ......... arrow keys or WASD; on phones, the four arrow buttons
+ *
+ * HOW THE MULTIPLAYER WORKS (a relay room: no server code):
+ *   - The round lives in ONE shared field, `round`: {id, v, phase, seed, startAt, endsAt,
+ *     res, win}. Only the HOST writes it; `v` goes up on every write. startAt is a timestamp,
+ *     so every player's song starts together; the song and its arrows come from mulberry32(seed).
+ *   - The HOST is the lowest sessionId among live players (heartbeat seen in the last 3s),
+ *     worked out every frame. It counts in, ends the song, runs the vote and counts it. It
+ *     also plays the bots: their scores, moves and votes go in `bots` a few times a second.
+ *     A new host adopts both and carries on from the timestamps.
+ *   - Each player judges its OWN arrows and writes `d` {r, sc, st, mx, p, g, m, mv, mk}
+ *     (round, score, streak, best streak, perfect/good/miss counts, last move and a move
+ *     counter: a new mk makes your dancer do move mv on every screen), `vote` {r, f} (who it
+ *     votes for), `hb` (heartbeat) once a second, `rdy` (Play again) and `n`/`c` (name, color).
+ *     No intents: nobody's dance changes anyone else's score.
+ *   - Someone who arrives mid-song dances from where the song is.
+ *   - ?attract plays offline, bots plus an autopilot for you, starting mid-streak.
+ *   - Leaderboard "dance-score": each player's best score.
+ */
+import * as THREE from "three";
+
+// ── CONFIG ──────────────────────────────────────────────────────────────────────────
+const CONFIG = {
+  seats: 5,               // bots fill the stage up to this many dancers
+  countdown: 4000,        // ms of count-in before the song
+  voteMs: 15000,          // ms to vote for the best dancer
+  resultsMs: 10000,       // ms on the results card before the next song
+  bars: 18,               // song length in bars of 4 beats (the first 2 have no arrows)
+  bpm: [104, 112, 118, 124], // each song picks one
+  leadMs: 1900,           // how long an arrow is on the track before it reaches the ring
+  perfect: 60,            // ms either side of the beat for PERFECT...
+  good: 130,              // ...and GOOD; further off is a miss
+  points: { P: 100, G: 60 }, // per hit, times the streak multiplier
+  multEvery: 10,          // the multiplier goes up every this many hits in a row...
+  multMax: 4,             // ...up to this
+  tiers: [0, 8, 16, 30],  // streak that unlocks each tier of moves (Step, Groove, Spin, Fever)
+  inputOffsetMs: 0,       // add this to every hit if arrows feel late (Bluetooth headphones: try -80)
+  botSkill: [0.62, 0.93], // 0..1: how often a bot lands its arrows
+  sendMs: 120,            // how often your dance goes out
+  volume: 0.5,
+  board: "dance-score",
+};
+const TIER_NAMES = ["Step", "Groove", "Spin", "Fever"];
+const ARROW_COLORS = ["#ff5c8a", "#3dd6ff", "#7dff6a", "#ffd23f"]; // left, down, up, right
+const KEYS = { arrowleft: 0, a: 0, arrowdown: 1, s: 1, arrowup: 2, w: 2, arrowright: 3, d: 3 };
+const BOT_NAMES = ["Disco Dee", "Moonwalker", "Groovebot", "Twinkle Toes", "Funky Fresh", "Boogie Bot", "Shimmy"];
+const COLORS = ["#ff5c8a", "#3dd6ff", "#ffd23f", "#7dff6a", "#b07cff", "#ff9a4d", "#3fe0c5", "#ff7ad9"];
+const NAME_A = ["Funky", "Groovy", "Snappy", "Sparkly", "Smooth", "Jazzy"], NAME_B = ["Feet", "Mover", "Hips", "Spinner", "Dancer", "Shuffle"];
+
+// ── CONNECTION ──────────────────────────────────────────────────────────────────────
+// The builder fills these in for this game. Downloaded from GitHub? Put your own pk_ key here.
+const MP_CONNECT = {
+  key: 'pk_REPLACE_ME',
+  room: 'dance-off',
+  endpoint: 'wss://live.multiplayeragent.com',
+  apiUrl: 'https://api.multiplayeragent.com',
+};
+const ATTRACT = new URLSearchParams(location.search).has("attract");
+
+/** Same shape as the SDK client, kept in this tab: offline play and ?attract. */
+function localRoom() {
+  const id = "local", state = { entities: { players: { [id]: {} } }, shared: {} }, subs = [];
+  let queued = false;
+  const emit = () => { if (!queued) { queued = true; queueMicrotask(() => { queued = false; subs.forEach((f) => f(state)); }); } };
+  const put = (o, k, v) => { if (typeof k === "object") Object.assign(o, k); else o[k] = v; emit(); };
+  return {
+    sessionId: id, state, offline: true,
+    me: { set: (k, v) => put(state.entities.players[id], k, v) },
+    setShared: (k, v) => put(state.shared, k, v),
+    onState: (f) => { subs.push(f); f(state); }, onJoin() {}, onLeave() {}, on() {}, send() {},
+    onDisconnect() {}, onReconnect() {}, leave: async () => {},
+  };
+}
+async function connect() {
+  if (ATTRACT || typeof MP === "undefined") return localRoom();
+  try {
+    const mp = await Promise.race([MP.join({ ...MP_CONNECT }), new Promise((_, no) => setTimeout(() => no(new Error("timed out")), 10000))]);
+    window.mp = mp; // the builder calls window.mp.leave() when the page closes
+    return mp;
+  } catch (e) {
+    console.warn("Playing offline:", e && e.message);
+    return localRoom();
+  }
+}
+const parse = (v, fb) => { if (typeof v !== "string") return fb; try { return JSON.parse(v); } catch { return fb; } };
+const memo = new Map();
+/** A JSON field, parsed once per change (read-only: never mutate what this returns). */
+function cached(key, raw, fb) { const m = memo.get(key); if (m && m.raw === raw) return m.v; const v = parse(raw, fb); memo.set(key, { raw, v }); return v; }
+let net = null, S = { entities: { players: {} }, shared: {} }, netDown = false;
+const seenHb = new Map(); // sessionId -> { hb, at } on OUR clock
+/** Players whose heartbeat moved in the last 3s (plus us), sorted by sessionId. */
+function livePlayers() {
+  const now = performance.now(), out = [];
+  for (const [id, p] of Object.entries(S.entities.players || {})) {
+    const s = seenHb.get(id);
+    if (!s || s.hb !== p.hb) seenHb.set(id, { hb: p.hb, at: now });
+    if (id === net.sessionId || now - seenHb.get(id).at < 3000) out.push(id);
+  }
+  return out.sort();
+}
+const isHost = () => livePlayers()[0] === net.sessionId;
+const humans = () => livePlayers(); // (in ?attract you dance too, on autopilot)
+
+// ── SONG ────────────────────────────────────────────────────────────────────────────
+function mulberry32(a) { return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const PROGRESSIONS = [[0, 8, 3, 10], [0, 5, 8, 7], [0, 10, 8, 10], [0, 3, 10, 5], [0, 8, 5, 7]]; // minor-key chord roots
+const CHORD = { 0: [0, 3, 7], 3: [3, 7, 10], 5: [5, 8, 12], 7: [7, 11, 14], 8: [8, 12, 15], 10: [10, 14, 17] };
+// each section: bars, how busy the arrows are (0 = none: the intro groove)
+const SECTIONS = [{ bars: 2, dens: 0 }, { bars: 4, dens: 1 }, { bars: 4, dens: 2 }, { bars: 4, dens: 2.5 }, { bars: 4, dens: 3 }];
+const densAt = (bar) => { let b = 0; for (const s of SECTIONS) { if (bar < b + s.bars) return s.dens; b += s.bars; } return 2; };
+const songMemo = new Map();
+/** The song from its seed: tempo, chords and the arrows. Everyone builds the same one. */
+function songOf(seed) {
+  if (songMemo.has(seed)) return songMemo.get(seed);
+  const rnd = mulberry32(seed), pick = (a) => a[Math.floor(rnd() * a.length)];
+  const bpm = pick(CONFIG.bpm), beat = 60000 / bpm, step = beat / 4;
+  const root = 45 + Math.floor(rnd() * 7), prog = pick(PROGRESSIONS);
+  const name = pick(["Disco", "Neon", "Funky", "Midnight", "Glitter", "Boogie", "Electric", "Roller"]) + " " + pick(["Fever", "Shuffle", "Strut", "Party", "Groove", "Heat", "Slide", "Nights"]);
+  const arrows = [];
+  let last = -1, run = 0;
+  for (let bar = 0; bar < CONFIG.bars; bar++) for (let s = 0; s < 16; s += 2) {
+    const d = densAt(bar), onBeat = s % 4 === 0;
+    const want = d === 0 ? 0 : onBeat ? (d >= 2 || s % 8 === 0 ? 1 : 0) : d >= 3 ? 0.4 : d >= 2.5 ? 0.2 : 0;
+    if (rnd() >= want) continue;
+    let dir = Math.floor(rnd() * 4);
+    if (dir === last && run >= 1) dir = (dir + 1 + Math.floor(rnd() * 3)) % 4; // never the same arrow 3 times running
+    run = dir === last ? run + 1 : 0; last = dir;
+    arrows.push({ t: (bar * 16 + s) * step, d: dir });
+  }
+  const song = { seed, bpm, beat, step, root, prog, name, arrows, length: CONFIG.bars * 16 * step };
+  songMemo.set(seed, song);
+  return song;
+}
+
+// ── MUSIC ───────────────────────────────────────────────────────────────────────────
+let audio = null, master = null, noiseBuf = null;
+const music = { key: "", base: 0, next: 0 }; // base: the AudioContext time of song time 0
+function unlockAudio() {
+  if (audio || ATTRACT) return;
+  try {
+    audio = new AudioContext();
+    const comp = audio.createDynamicsCompressor(); master = audio.createGain(); master.gain.value = CONFIG.volume; master.connect(comp).connect(audio.destination);
+    noiseBuf = audio.createBuffer(1, audio.sampleRate, audio.sampleRate);
+    const ch = noiseBuf.getChannelData(0); for (let i = 0; i < ch.length; i++) ch[i] = Math.random() * 2 - 1;
+    music.key = ""; // line up with the song on the next frame
+  } catch { audio = null; }
+}
+const hz = (m) => 440 * Math.pow(2, (m - 69) / 12);
+function voice(type, freq, at, len, vol, filter) {
+  const o = audio.createOscillator(), g = audio.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, at);
+  g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(vol, at + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, at + len);
+  if (filter) { const f = audio.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = filter; o.connect(f).connect(g); } else o.connect(g);
+  g.connect(master); o.start(at); o.stop(at + len + 0.05);
+  return o;
+}
+function hiss(at, len, vol, hp) {
+  const src = audio.createBufferSource(), f = audio.createBiquadFilter(), g = audio.createGain();
+  src.buffer = noiseBuf; f.type = "highpass"; f.frequency.value = hp;
+  g.gain.setValueAtTime(vol, at); g.gain.exponentialRampToValueAtTime(0.0001, at + len);
+  src.connect(f).connect(g).connect(master); src.start(at, Math.random() * 0.5); src.stop(at + len + 0.02);
+}
+/** The dance track at 16th-note k: four-on-the-floor kick, claps, hats, an octave bass and pads. */
+function playStep(song, k, at) {
+  const bar = Math.floor(k / 16), s = k % 16, d = densAt(bar), chord = song.prog[bar % 4], step = song.step / 1000;
+  if (s === 0) for (const x of CHORD[chord]) voice("triangle", hz(song.root + 12 + x), at, 16 * step, 0.03);
+  if (s % 4 === 0 && (d > 0 || s % 8 === 0)) { const o = voice("sine", 150, at, 0.3, 0.9); o.frequency.exponentialRampToValueAtTime(42, at + 0.12); }
+  if (s % 8 === 4 && d > 0) { for (const dt of [0, 0.011, 0.022]) hiss(at + dt, dt ? 0.14 : 0.02, 0.28, 900); }
+  if (s % 4 === 2) hiss(at, d >= 2.5 && s === 14 ? 0.14 : 0.05, 0.12, 7000);
+  if (d >= 3 && s % 2 === 1 && (k * 7919) % 10 < 3) hiss(at, 0.03, 0.06, 8000);
+  if (d > 0 && s % 2 === 0) voice("sawtooth", hz(song.root + chord + (s % 4 === 2 ? 12 : 0)), at, step * 1.8, 0.18, 600);
+}
+/** Called every frame: queue the beat ~0.2s ahead on the audio clock, lined up with startAt. Keeps grooving through the vote. */
+function scheduleMusic(r) {
+  if (!audio || !r || (r.phase !== "count" && r.phase !== "dance" && r.phase !== "vote")) return;
+  const song = songOf(r.seed), t = Date.now() - r.startAt;
+  if (music.key !== r.id + ":" + r.seed) {
+    music.key = r.id + ":" + r.seed;
+    music.base = audio.currentTime - t / 1000 - (audio.outputLatency || audio.baseLatency || 0);
+    music.next = Math.max(0, Math.ceil(t / song.step));
+  }
+  while (music.next * song.step < t + 200) {
+    const k = music.next++, at = music.base + (k * song.step) / 1000;
+    if (at >= audio.currentTime - 0.01) playStep(song, k, Math.max(at, audio.currentTime));
+  }
+}
+/** The note you hit: a chord tone picked by the arrow, so a good run plays a little tune. */
+function hitSound(song, arrow, j) {
+  if (!audio) return;
+  const bar = Math.floor(arrow.t / (16 * song.step)), tones = CHORD[song.prog[bar % 4]], m = song.root + 24 + [tones[0], tones[1], tones[2], tones[0] + 12][arrow.d];
+  voice("square", hz(m), audio.currentTime, 0.2, j === "P" ? 0.09 : 0.06, 2600); voice("triangle", hz(m) * 2, audio.currentTime, 0.12, 0.04);
+}
+function blip(f0, f1, len, vol) { if (!audio) return; const o = voice("sine", f0, audio.currentTime, len, vol); o.frequency.exponentialRampToValueAtTime(f1, audio.currentTime + len); }
+
+// ── STAGE ───────────────────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1));
+renderer.shadowMap.enabled = true;
+renderer.domElement.id = "world";
+document.body.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color("#0b0718");
+scene.fog = new THREE.Fog("#0b0718", 18, 42);
+const camera = new THREE.PerspectiveCamera(50, 1, 0.3, 120);
+function fit() { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
+addEventListener("resize", fit); addEventListener("orientationchange", fit); fit();
+scene.add(new THREE.HemisphereLight("#9a8cff", "#1a0f2e", 1.1));
+const key = new THREE.DirectionalLight("#ffffff", 1.6);
+key.position.set(3, 10, 8); key.castShadow = true; key.shadow.mapSize.set(1024, 1024);
+Object.assign(key.shadow.camera, { left: -10, right: 10, top: 10, bottom: -6, near: 1, far: 30 });
+scene.add(key);
+const glowA = new THREE.PointLight("#ff5c8a", 30, 0, 2), glowB = new THREE.PointLight("#3dd6ff", 30, 0, 2);
+glowA.position.set(-6, 4, 2); glowB.position.set(6, 4, 2); scene.add(glowA, glowB);
+const mat = (color, more) => new THREE.MeshStandardMaterial({ color, roughness: 0.6, ...more });
+function canvasTex(w, h, paint) { const c = document.createElement("canvas"); c.width = w; c.height = h; paint(c.getContext("2d"), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; }
+// The light-up floor: one instanced tile per square, recolored on every beat.
+const FLOOR_W = 12, FLOOR_D = 7, TILE = 1.25;
+const floor = new THREE.InstancedMesh(new THREE.BoxGeometry(TILE * 0.94, 0.12, TILE * 0.94), new THREE.MeshBasicMaterial({ color: "#ffffff" }), FLOOR_W * FLOOR_D); // unlit: the tiles glow
+const M4 = new THREE.Matrix4(), tileColor = new THREE.Color();
+for (let x = 0; x < FLOOR_W; x++) for (let z = 0; z < FLOOR_D; z++) floor.setMatrixAt(x * FLOOR_D + z, M4.makeTranslation((x - (FLOOR_W - 1) / 2) * TILE, -0.06, (z - (FLOOR_D - 1) / 2) * TILE - 0.6));
+scene.add(floor);
+const FLOOR_PALETTE = ["#ff5c8a", "#3dd6ff", "#b07cff", "#ffd23f", "#7dff6a"].map((c) => new THREE.Color(c));
+const mod = (a, n) => ((a % n) + n) % n;
+function lightFloor(beatNo, pulse) {
+  for (let x = 0; x < FLOOR_W; x++) for (let z = 0; z < FLOOR_D; z++) {
+    const pattern = mod(x + z + beatNo, 4) === 0 || (mod(beatNo, 8) >= 4 && mod(x * 3 + z * 5 + beatNo, 7) === 0);
+    tileColor.copy(FLOOR_PALETTE[mod(x + beatNo * 2 + z, FLOOR_PALETTE.length)]).multiplyScalar(pattern ? 0.45 + pulse * 0.9 : 0.07);
+    floor.setColorAt(x * FLOOR_D + z, tileColor);
+  }
+  floor.instanceColor.needsUpdate = true;
+}
+lightFloor(0, 0);
+// Riser at the back (the back row stands on it on tall screens), back wall with a neon sign and an equalizer.
+const riser = new THREE.Mesh(new THREE.BoxGeometry(FLOOR_W * TILE, 0.6, 2.4), mat("#1d1438")); riser.position.set(0, 0.3, -3.2); riser.receiveShadow = true; riser.castShadow = true; scene.add(riser);
+const wall = new THREE.Mesh(new THREE.PlaneGeometry(26, 12), new THREE.MeshStandardMaterial({ color: "#ffffff", emissive: "#ffffff", emissiveIntensity: 0.9, map: canvasTex(1024, 470, (c, w, h) => {
+  c.fillStyle = "#120a26"; c.fillRect(0, 0, w, h);
+  for (let i = 0; i < 40; i++) { c.fillStyle = `rgba(${i % 2 ? "255,92,138" : "61,214,255"},0.05)`; c.fillRect(0, i * 12, w, 6); }
+  c.font = "900 120px system-ui, sans-serif"; c.textAlign = "center"; c.textBaseline = "middle";
+  c.shadowColor = "#ff5c8a"; c.shadowBlur = 40; c.strokeStyle = "#ff8fb0"; c.lineWidth = 6; c.strokeText("DANCE OFF", w / 2, 150); c.shadowBlur = 20; c.fillStyle = "#fff0f5"; c.fillText("DANCE OFF", w / 2, 150);
+}) }));
+wall.material.emissiveMap = wall.material.map; wall.position.set(0, 5.4, -5); scene.add(wall);
+const EQ = 24, eq = new THREE.InstancedMesh(new THREE.BoxGeometry(0.55, 1, 0.1), new THREE.MeshBasicMaterial({ color: "#ffffff" }), EQ);
+for (let i = 0; i < EQ; i++) eq.setColorAt(i, new THREE.Color(FLOOR_PALETTE[i % 3].getHex()));
+scene.add(eq);
+const eqPos = new THREE.Vector3(), eqRot = new THREE.Quaternion(), eqScale = new THREE.Vector3();
+function animateEq(t, pulse) {
+  for (let i = 0; i < EQ; i++) {
+    const h = 0.25 + Math.abs(Math.sin(t * (2.3 + (i % 5) * 0.7) + i)) * 1.2 + pulse * (1.2 - Math.abs(i - EQ / 2) / EQ * 1.6);
+    eq.setMatrixAt(i, M4.compose(eqPos.set((i - (EQ - 1) / 2) * 0.72, 1.9 + h / 2, -4.9), eqRot, eqScale.set(1, Math.max(0.1, h), 1)));
+  }
+  eq.instanceMatrix.needsUpdate = true;
+}
+// The disco ball and the light beams sweeping from above.
+const ball = new THREE.Mesh(new THREE.SphereGeometry(0.8, 24, 16), new THREE.MeshStandardMaterial({ metalness: 0.9, roughness: 0.25, emissive: "#ffffff", emissiveIntensity: 0.35, map: canvasTex(256, 128, (c, w, h) => { for (let y = 0; y < h; y += 8) for (let x = 0; x < w; x += 8) { const v = 140 + Math.floor(Math.random() * 115); c.fillStyle = `rgb(${v},${v},${v + 10})`; c.fillRect(x, y, 7, 7); } }) }));
+ball.material.emissiveMap = ball.material.map; ball.position.set(0, 6.4, -1); scene.add(ball);
+const beams = [];
+for (let i = 0; i < 4; i++) {
+  const b = new THREE.Mesh(new THREE.ConeGeometry(1.4, 10, 20, 1, true), new THREE.MeshBasicMaterial({ color: ARROW_COLORS[i], transparent: true, opacity: 0.08, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+  b.geometry.translate(0, -5, 0); b.position.set((i - 1.5) * 4, 9, -2); scene.add(b); beams.push(b);
+}
+// Confetti for streak milestones and the winner.
+const CONF = 220, confetti = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.12, 0.2), new THREE.MeshBasicMaterial({ color: "#ffffff", side: THREE.DoubleSide }), CONF);
+const bits = Array.from({ length: CONF }, (_, i) => ({ x: 0, y: -10, z: 0, vx: 0, vy: 0, vz: 0, r: 0, life: 0 }));
+for (let i = 0; i < CONF; i++) confetti.setColorAt(i, new THREE.Color(COLORS[i % COLORS.length]));
+scene.add(confetti);
+let confNext = 0;
+function burst(x, y, z, n, up = 6) { for (let k = 0; k < n; k++) { const b = bits[confNext++ % CONF]; Object.assign(b, { x, y, z, vx: (Math.random() - 0.5) * 5, vy: up * (0.5 + Math.random()), vz: (Math.random() - 0.5) * 3, r: Math.random() * 6, life: 2.5 }); } }
+const Q = new THREE.Quaternion(), E = new THREE.Euler(), V3 = new THREE.Vector3(), ONE = new THREE.Vector3(1, 1, 1);
+function animateConfetti(dt) {
+  for (let i = 0; i < CONF; i++) {
+    const b = bits[i];
+    if (b.life > 0) { b.life -= dt; b.vy -= 9 * dt; b.vx *= 0.99; b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt; b.r += dt * 8; if (b.y < 0.02) { b.y = 0.02; b.vy = 0; b.vx *= 0.8; } }
+    confetti.setMatrixAt(i, M4.compose(V3.set(b.x, b.life > 0 ? b.y : -10, b.z), Q.setFromEuler(E.set(b.r, b.r * 0.7, 0)), ONE));
+  }
+  confetti.instanceMatrix.needsUpdate = true;
+}
+
+// ── DANCERS ─────────────────────────────────────────────────────────────────────────
+const skin = mat("#ffe0c2"), black = mat("#1d2433"), blush = mat("#ff9fb0"), shoe = mat("#2a2440"), gold = mat("#ffc83d", { metalness: 0.6, roughness: 0.3, emissive: "#664400" });
+const capsule = new THREE.CapsuleGeometry(0.42, 0.4, 4, 14), headGeo = new THREE.SphereGeometry(0.46, 18, 14), eyeGeo = new THREE.SphereGeometry(0.06, 8, 6), armGeo = new THREE.CapsuleGeometry(0.1, 0.32, 3, 8), footGeo = new THREE.SphereGeometry(0.15, 10, 8);
+const bandGeo = new THREE.TorusGeometry(0.44, 0.06, 8, 24), ringGeo = new THREE.TorusGeometry(0.85, 0.07, 8, 40), discGeo = new THREE.CircleGeometry(1.0, 32);
+function makeDancer() {
+  const g = new THREE.Group(), rig = new THREE.Group(), bodyMat = mat("#ccc");
+  rig.position.y = 0.9; g.add(rig); // the rig pivots at the hips, so spins and flips turn around the middle
+  const part = (geo, m, x, y, z, parent = rig) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; parent.add(o); return o; };
+  part(capsule, bodyMat, 0, -0.15, 0);
+  const head = new THREE.Group(); head.position.y = 0.65; rig.add(head);
+  part(headGeo, skin, 0, 0, 0, head);
+  for (const s of [-1, 1]) { part(eyeGeo, black, s * 0.15, 0.05, 0.42, head); part(eyeGeo, blush, s * 0.27, -0.08, 0.36, head).scale.set(1.3, 0.7, 0.6); }
+  const band = part(bandGeo, bodyMat, 0, 0.2, 0, head); band.rotation.x = Math.PI / 2 - 0.25; // a sweatband in the dancer's color
+  const crown = new THREE.Group(); crown.position.y = 0.42; head.add(crown); crown.visible = false;
+  const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.18, 10, 1, true), gold); crown.add(rim);
+  for (let i = 0; i < 5; i++) { const c = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.18, 6), gold); c.position.set(Math.sin((i / 5) * Math.PI * 2) * 0.28, 0.16, Math.cos((i / 5) * Math.PI * 2) * 0.28); crown.add(c); }
+  const arms = [-1, 1].map((s) => { const p = new THREE.Group(); p.position.set(s * 0.5, 0.15, 0); rig.add(p); part(armGeo, bodyMat, 0, -0.22, 0, p); return p; });
+  const feet = [-1, 1].map((s) => part(footGeo, shoe, s * 0.2, -0.78, 0.05)); // in the rig, so jumps and flips take the feet along
+  const disc = new THREE.Mesh(discGeo, new THREE.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false }));
+  disc.rotation.x = -Math.PI / 2; disc.position.y = 0.02; g.add(disc);
+  const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
+  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.08; ring.visible = false; g.add(ring);
+  scene.add(g);
+  return { g, rig, head, arms, feet, bodyMat, disc, ring, crown, color: "", x: 0, y: 0, z: 0, fresh: true, move: null, mk: -1, flash: 0, tag: null, slot: -1 };
+}
+function setColor(v, c) { if (v.color === c) return; v.color = c; v.bodyMat.color.set(c); v.disc.material.color.set(c); v.ring.material.color.set(c); }
+const tierOf = (streak) => CONFIG.tiers.reduce((t, need, i) => (streak >= need ? i : t), 0); // 0..3
+/** Start a move on a dancer: d = 0..3 (left, down, up, right) or -1 (a stumble), at a tier. */
+function startMove(v, d, tier, now) { v.move = { d, tier, at: now }; if (d >= 0) v.flash = now; }
+/** Pose a dancer: a bob on every beat, plus its current move (bigger moves at higher tiers). */
+function poseDancer(v, now, beatMs, beatPhase) {
+  let y = Math.abs(Math.sin(beatPhase * Math.PI)) * 0.07, rx = 0, ry = 0, rz = Math.sin(beatPhase * Math.PI * 2) * 0.04, squat = 0, stance = 0.2, slide = 0;
+  let aL = [0.15, 0, -0.25], aR = [0.15, 0, 0.25];
+  const m = v.move, T = m ? m.tier : 0, p = m ? (now - m.at) / (beatMs * (T >= 2 ? 1.5 : 1)) : 2;
+  if (m && p >= 0 && p < 1) {
+    const s = Math.sin(p * Math.PI);
+    if (m.d === -1) { rz = Math.sin(p * Math.PI * 4) * 0.3 * (1 - p); squat = 0.12 * s; aL = [0.7, 0, -0.9]; aR = [0.7, 0, 0.9]; }
+    else if (m.d === 0 || m.d === 3) {
+      const side = m.d === 0 ? 1 : -1;
+      rz = side * (0.25 + T * 0.06) * s; stance = 0.2 + 0.15 * s;
+      const out = [0, 0, -side * (1.5 * s + 0.2)], up = [-(2.2 + T * 0.2) * s, 0, side * 0.3];
+      if (side > 0) { aL = [0, 0, -(1.5 * s + 0.2)]; aR = up; } else { aR = [0, 0, 1.5 * s + 0.2]; aL = [up[0], 0, -0.3]; }
+      if (T >= 1) y += s * (0.1 + T * 0.08); // a hop
+      if (T >= 2) { slide = -side * s * 0.35; aL[2] += Math.sin(p * Math.PI * 4) * 0.4; aR[2] += Math.sin(p * Math.PI * 4) * 0.4; } // a slide with waving arms
+    } else if (m.d === 2) {
+      y += s * (0.4 + T * 0.2); aL = [-2.9 * s, 0, -0.25]; aR = [-2.9 * s, 0, 0.25];
+      if (T === 2) ry = p * Math.PI * 2; // a spin jump
+      if (T >= 3) { rx = -p * Math.PI * 2; y += s * 0.4; } // fever: a backflip
+    } else {
+      squat = s * (0.3 + T * 0.05); stance = 0.2 + 0.25 * s; aL = [-1.3 * s, 0, -0.7 * s]; aR = [-1.3 * s, 0, 0.7 * s];
+      if (T >= 2) ry = -p * Math.PI * 2;
+      if (T >= 3) { aL = [-1.3 * s, 0, -2.2 * s]; aR = [-1.3 * s, 0, 2.2 * s]; }
+    }
+  }
+  v.rig.position.set(slide, 0.9 + y - squat, 0); v.rig.rotation.set(rx, ry, rz);
+  v.arms[0].rotation.set(...aL); v.arms[1].rotation.set(...aR);
+  v.feet[0].position.set(-stance, -0.78 + squat, 0.05); v.feet[1].position.set(stance, -0.78 + squat, 0.05); // a squat bends the knees: feet stay down
+  v.head.rotation.set(0, 0, Math.sin(beatPhase * Math.PI * 2) * 0.08);
+}
+const views = new Map(); // id -> dancer, for everyone (me included)
+function viewOf(id) {
+  let v = views.get(id);
+  if (!v) { v = makeDancer(); const el = document.createElement("div"); el.className = "tag"; $("tags").appendChild(el); v.tag = el; views.set(id, v); }
+  return v;
+}
+function dropView(id) { const v = views.get(id); if (v) { scene.remove(v.g); v.tag.remove(); views.delete(id); } }
+/** Where dancers stand: one arc on wide screens, two rows (the back one on the riser) on tall ones. You get the middle. */
+function slotsFor(n, portrait) {
+  const out = [];
+  if (!portrait || n <= 3) { const sp = n > 6 ? 1.9 : 2.3; for (let k = 0; k < n; k++) { const x = (k - (n - 1) / 2) * sp; out.push({ x, y: 0, z: -Math.abs(x) * 0.18 }); } }
+  else {
+    const front = Math.ceil(n / 2), back = n - front, sp = 1.75;
+    for (let k = 0; k < front; k++) out.push({ x: (k - (front - 1) / 2) * sp, y: 0, z: 0.6 });
+    for (let k = 0; k < back; k++) out.push({ x: (k - (back - 1) / 2) * sp, y: 0.6, z: -3.0 });
+  }
+  return out.map((s, i) => ({ ...s, i })).sort((a, b) => a.y - b.y || Math.abs(a.x) - Math.abs(b.x)); // middle front first
+}
+const proj = new THREE.Vector3();
+function placeTag(v, label, mine, show) {
+  proj.set(v.x, v.y + 2.4, v.z).project(camera);
+  if (!show || proj.z > 1) { v.tag.style.display = "none"; return; }
+  v.tag.style.display = "";
+  if (v.tag.textContent !== label) v.tag.textContent = label;
+  v.tag.className = "tag" + (mine ? " me" : "");
+  v.tag.style.color = mine ? "" : v.color;
+  v.tag.style.transform = `translate(-50%, -100%) translate(${((proj.x + 1) / 2) * innerWidth}px, ${((1 - proj.y) / 2) * innerHeight}px)`;
+}
+
+// ── ROUND (HOST) ────────────────────────────────────────────────────────────────────
+const host = { last: null, wasHost: false, bots: [], roundId: 0, lastBots: 0, voteAt: new Map() };
+/** The round as state has it, or the host's own newer write that hasn't come back yet. `v` only goes up. */
+function round() {
+  const r = cached("round", S.shared.round, null);
+  return host.last && isHost() && (!r || host.last.v > r.v) ? host.last : r;
+}
+function writeRound(r) { r = { ...r, v: (round()?.v ?? 0) + 1 }; host.last = r; net.setShared("round", JSON.stringify(r)); return r; }
+function newRound(id) {
+  const seed = (Math.random() * 1e9) | 0, skip = ATTRACT ? 7 * 16 * songOf(seed).step : 0; // ?attract starts in the busy part
+  return { id, phase: "count", seed, startAt: Date.now() + CONFIG.countdown - skip, endsAt: 0, res: [], win: "" };
+}
+const blank = () => ({ sc: 0, st: 0, mx: 0, p: 0, g: 0, m: 0, mv: 0, mk: 0 });
+/** Become host: take over the bots exactly as state has them. */
+function adopt() {
+  host.wasHost = true; host.voteAt.clear();
+  const r = round(), b = cached("bots", S.shared.bots, null);
+  host.roundId = r ? r.id : 0;
+  host.bots = r && b && b.r === r.id && Array.isArray(b.list) ? b.list.map((x) => ({ ...x })) : [];
+}
+function fillBots() {
+  const want = Math.max(0, CONFIG.seats - humans().length);
+  if (host.bots.length > want) host.bots.length = want;
+  const taken = new Set([...Object.values(S.entities.players || {}).map((p) => p.c), myColor]);
+  while (host.bots.length < want) {
+    const names = new Set(host.bots.map((b) => b.n)), colors = new Set([...taken, ...host.bots.map((b) => b.c)]), [lo, hi] = CONFIG.botSkill;
+    const bot = { i: "bot" + host.bots.length, n: BOT_NAMES.find((n) => !names.has(n)) || "Bot", c: COLORS.find((c) => !colors.has(c)) || "#ccc", k: Math.round((lo + Math.random() * (hi - lo)) * 100) / 100, ni: 0, f: "", ...blank() };
+    if (ATTRACT) Object.assign(bot, { st: 14 + Math.floor(Math.random() * 18), mx: 30 }); // the preview starts mid-streak
+    host.bots.push(bot);
+  }
+}
+/** Bots dance each arrow as it passes the ring: a roll against their skill picks the result. */
+function driveBots(r) {
+  const chart = songOf(r.seed).arrows, t = Date.now() - r.startAt;
+  for (const b of host.bots) {
+    if (!b.ni) while (b.ni < chart.length && chart[b.ni].t < t - CONFIG.good) b.ni++; // a bot added mid-song starts here
+    while (b.ni < chart.length && chart[b.ni].t + 30 <= t) {
+      const x = Math.random(), miss = (1 - b.k) * 0.28, perf = b.k * 0.7;
+      const j = x < miss ? "M" : x < miss + perf ? "P" : "G";
+      score(b, j); b.mv = j === "M" ? -1 : chart[b.ni].d; b.mk++; b.ni++;
+    }
+  }
+}
+/** Bots vote a few seconds into the vote, for a good dancer (never themselves). */
+function botVotes(r, now) {
+  const list = dancers(r);
+  for (const b of host.bots) {
+    if (b.f) continue;
+    if (!host.voteAt.has(b.i)) host.voteAt.set(b.i, now + 2000 + Math.random() * 7000);
+    if (now < host.voteAt.get(b.i)) continue;
+    const pool = list.filter((x) => x.id !== b.i), total = pool.reduce((s, x) => s + x.sc + 3000, 0);
+    let roll = Math.random() * total;
+    b.f = (pool.find((x) => (roll -= x.sc + 3000) <= 0) || pool[0] || { id: "" }).id;
+  }
+}
+/** Everyone dancing this round: { id, name, color, sc, st, mx, p, g, m, mv, mk, mine, bot, f (vote) }. */
+function dancers(r) {
+  const out = [];
+  for (const id of humans()) {
+    if (id === net.sessionId) { if (me.roundId === r.id) out.push({ id, name: myName, color: myColor, ...me.st, mine: true, f: me.vote }); continue; }
+    const p = S.entities.players[id] || {}, d = cached("d:" + id, p.d, null), vote = cached("vote:" + id, p.vote, null);
+    if (d && d.r === r.id) out.push({ id, name: String(p.n || "Player"), color: p.c || "#ccc", ...blank(), ...d, f: vote && vote.r === r.id ? vote.f : "" });
+  }
+  for (const b of botList(r)) out.push({ id: b.i, name: b.n, color: b.c, sc: b.sc, st: b.st, mx: b.mx, p: b.p, g: b.g, m: b.m, mv: b.mv, mk: b.mk, bot: true, f: b.f });
+  return out;
+}
+function botList(r) {
+  if (isHost()) return host.bots;
+  const b = cached("bots", S.shared.bots, null);
+  return b && b.r === r.id && Array.isArray(b.list) ? b.list : [];
+}
+const botColors = () => { const r = round(); return r ? botList(r).map((b) => b.c) : []; };
+/** Count the votes: most votes wins, a tie goes to the higher score. */
+function tally(r) {
+  const list = dancers(r), votes = new Map();
+  for (const x of list) if (x.f && x.f !== x.id && list.some((y) => y.id === x.f)) votes.set(x.f, (votes.get(x.f) || 0) + 1);
+  const res = list.map((x) => [x.id, String(x.name).slice(0, 14), x.color, votes.get(x.id) || 0, x.sc, x.mx]).sort((a, b) => b[3] - a[3] || b[4] - a[4]).slice(0, 8);
+  return { ...r, phase: "done", endsAt: Date.now() + CONFIG.resultsMs, res, win: res[0] ? res[0][0] : "" };
+}
+function hostTick(now) {
+  if (!host.wasHost) adopt();
+  let r = round();
+  const t = Date.now();
+  if (!r) r = writeRound(newRound(1));
+  if (host.roundId !== r.id) { host.roundId = r.id; host.bots = []; host.voteAt.clear(); } // a new round: fresh bots
+  if (r.phase === "count") {
+    fillBots();
+    if (t >= r.startAt) r = writeRound({ ...r, phase: "dance", endsAt: r.startAt + songOf(r.seed).length + 600 });
+  } else if (r.phase === "dance") {
+    driveBots(r);
+    if (t >= r.endsAt) r = writeRound({ ...r, phase: "vote", endsAt: t + CONFIG.voteMs });
+  } else if (r.phase === "vote") {
+    botVotes(r, now);
+    const list = dancers(r), allIn = list.every((x) => x.f);
+    if (t >= r.endsAt || (allIn && list.length > 1)) r = writeRound(tally(r));
+  } else if (r.phase === "done") {
+    const people = humans(), ready = people.length && people.every((id) => (id === net.sessionId ? me.ready : (S.entities.players[id] || {}).rdy) === r.id);
+    if (t > r.endsAt || ready) r = writeRound(newRound(r.id + 1));
+  }
+  if (now - host.lastBots > (r.phase === "dance" ? 150 : 600)) { host.lastBots = now; net.setShared("bots", JSON.stringify({ r: r.id, list: host.bots })); }
+}
+
+// ── MY DANCE ────────────────────────────────────────────────────────────────────────
+let myName = "";
+try { myName = localStorage.getItem("mpa-name") || ""; } catch {}
+myName = myName || NAME_A[Math.floor(Math.random() * NAME_A.length)] + " " + NAME_B[Math.floor(Math.random() * NAME_B.length)];
+let myColor = COLORS[0]; // picked on join: the first color nobody in the room has
+const me = { roundId: -1, st: blank(), judged: null, next: 0, late: false, lastSend: 0, lastJson: "", vote: "", ready: 0, submitted: -1, tier: 0 };
+/** Song time in ms for a moment on the performance clock (an input event's timestamp, say). */
+const songTime = (r, at = performance.now()) => Date.now() - (performance.now() - at) - r.startAt + CONFIG.inputOffsetMs;
+/** Adds one result to a scorecard (yours or a bot's): streak, best streak, score. */
+function score(st, j) {
+  if (j === "M") { st.m++; st.st = 0; return; }
+  st[j === "P" ? "p" : "g"]++; st.st++; st.mx = Math.max(st.mx, st.st);
+  st.sc += CONFIG.points[j] * Math.min(CONFIG.multMax, 1 + Math.floor((st.st - 1) / CONFIG.multEvery));
+}
+/** Line up for a round: arrows already gone by are skipped (not missed) if you came in late. */
+function joinRound(r) {
+  const song = songOf(r.seed), t = Date.now() - r.startAt;
+  Object.assign(me, { roundId: r.id, st: blank(), judged: new Uint8Array(song.arrows.length), next: 0, late: r.phase === "dance" && t > 2000, lastJson: "", vote: "", tier: 0 });
+  while (me.next < song.arrows.length && song.arrows[me.next].t < t + CONFIG.good) me.next++;
+  if (ATTRACT) Object.assign(me.st, { st: 28, mx: 28 }); // the preview starts mid-streak
+  $("over").hidden = true; trackFx.length = 0; publish(true);
+}
+/** An arrow pressed at time `at`: judge the closest arrow within reach. The wrong arrow is a miss. */
+function press(d, at) {
+  if (!(at > 0 && at <= performance.now())) at = performance.now();
+  const t0 = at;
+  unlockAudio(); // (the press time is already stamped: building the sound engine can take a moment)
+  litKey(d);
+  const r = round();
+  if (!r || r.phase !== "dance" || me.roundId !== r.id) return;
+  const song = songOf(r.seed), t = songTime(r, t0);
+  let best = -1;
+  for (let i = me.next; i < song.arrows.length && song.arrows[i].t <= t + CONFIG.good; i++) {
+    if (me.judged[i] || Math.abs(t - song.arrows[i].t) > CONFIG.good) continue;
+    if (best < 0 || Math.abs(t - song.arrows[i].t) < Math.abs(t - song.arrows[best].t)) best = i;
+  }
+  if (best < 0) return; // nothing in reach: a free step
+  const err = t - song.arrows[best].t;
+  judge(best, song.arrows[best].d !== d ? "M" : Math.abs(err) <= CONFIG.perfect ? "P" : "G");
+}
+function judge(i, j) {
+  const r = round(), song = songOf(r.seed), a = song.arrows[i], before = tierOf(me.st.st);
+  me.judged[i] = j === "M" ? 2 : 1;
+  while (me.next < song.arrows.length && me.judged[me.next]) me.next++;
+  const hadStreak = me.st.st;
+  score(me.st, j);
+  me.st.mv = j === "M" ? -1 : a.d; me.st.mk++;
+  const v = views.get(net.sessionId), tier = tierOf(me.st.st);
+  if (v) startMove(v, me.st.mv, tier, performance.now());
+  if (j !== "M") hitSound(song, a, j); else if (hadStreak >= 8) blip(220, 90, 0.25, 0.15);
+  trackFx.push({ kind: "judge", j, at: performance.now(), d: a.d });
+  if (tier > before) { toast(`${TIER_NAMES[tier].toUpperCase()} MOVES!`); blip(660, 1320, 0.3, 0.12); if (v) burst(v.x, v.y + 2, v.z, 30); }
+  publish(j === "M");
+}
+/** Every frame: arrows that slid past the ring unpressed are misses. */
+function sweepMisses(r) {
+  const song = songOf(r.seed), t = Date.now() - r.startAt;
+  while (me.next < song.arrows.length && song.arrows[me.next].t + CONFIG.good < t) { if (!me.judged[me.next]) judge(me.next, "M"); else me.next++; }
+}
+function publish(force) {
+  const now = performance.now(), json = JSON.stringify({ r: me.roundId, ...me.st });
+  if (json === me.lastJson || (!force && now - me.lastSend < CONFIG.sendMs)) return;
+  me.lastSend = now; me.lastJson = json; net.me.set("d", json);
+}
+function castVote(id) {
+  const r = round();
+  if (!r || r.phase !== "vote" || id === net.sessionId) return;
+  me.vote = id; net.me.set("vote", JSON.stringify({ r: r.id, f: id })); blip(520, 880, 0.15, 0.1); drawVote(r, true);
+}
+/** ?attract: your arrows press themselves, mostly on the beat. */
+function autopilot(r) {
+  if (!ATTRACT || r.phase !== "dance" || me.roundId !== r.id) return;
+  const song = songOf(r.seed), t = Date.now() - r.startAt, a = song.arrows[me.next];
+  if (!a) return;
+  if (a.aim === undefined) a.aim = (Math.random() - 0.4) * 60;
+  if (t >= a.t + a.aim) { const err = t - a.t; if (Math.abs(err) <= CONFIG.good) { litKey(a.d); judge(me.next, Math.abs(err) <= CONFIG.perfect ? "P" : "G"); } }
+}
+
+// ── HUD ─────────────────────────────────────────────────────────────────────────────
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const touchUI = matchMedia("(pointer: coarse)").matches;
+const track = $("track"), tctx = track.getContext("2d"), trackFx = [];
+let TW = 0, TH = 0;
+function fitTrack() { const d = Math.min(2, devicePixelRatio || 1), b = track.getBoundingClientRect(); TW = b.width; TH = b.height; track.width = Math.round(TW * d); track.height = Math.round(TH * d); tctx.setTransform(d, 0, 0, d, 0, 0); }
+addEventListener("resize", fitTrack);
+function arrowShape(x, y, s, d, fill, alpha = 1) {
+  tctx.save(); tctx.translate(x, y); tctx.rotate([Math.PI, Math.PI / 2, -Math.PI / 2, 0][d]); tctx.globalAlpha = alpha;
+  tctx.beginPath(); tctx.moveTo(s, 0); tctx.lineTo(0, -s); tctx.lineTo(0, -s * 0.45); tctx.lineTo(-s, -s * 0.45); tctx.lineTo(-s, s * 0.45); tctx.lineTo(0, s * 0.45); tctx.lineTo(0, s); tctx.closePath();
+  tctx.fillStyle = fill; tctx.fill(); tctx.lineWidth = 3; tctx.strokeStyle = "#0b0718"; tctx.stroke(); tctx.restore();
+}
+/** The arrow track: arrows slide from the right into the ring on the left, right on the beat. */
+function drawTrack(r, now) {
+  if (!TW) fitTrack();
+  tctx.clearRect(0, 0, TW, TH);
+  if (!r) return;
+  const song = songOf(r.seed), t = Date.now() - r.startAt - (audio ? (audio.outputLatency || 0) * 1000 : 0), ringX = Math.min(70, TW * 0.14), cy = TH / 2, span = TW - ringX - 16;
+  const xAt = (at) => ringX + ((at - t) / CONFIG.leadMs) * span;
+  for (let b = Math.ceil(t / song.beat); b * song.beat < t + CONFIG.leadMs; b++) { tctx.fillStyle = b % 4 ? "#ffffff12" : "#ffffff30"; tctx.fillRect(xAt(b * song.beat), 8, 2, TH - 16); }
+  const pulse = t > 0 ? Math.pow(1 - ((t % song.beat) / song.beat), 3) : 0;
+  tctx.strokeStyle = `rgba(255,210,63,${0.5 + pulse * 0.5})`; tctx.lineWidth = 4; tctx.beginPath(); tctx.arc(ringX, cy, 26 + pulse * 4, 0, Math.PI * 2); tctx.stroke();
+  if (r.phase === "dance" || r.phase === "count") {
+    const judged = me.roundId === r.id ? me.judged : null;
+    for (let i = song.arrows.length - 1; i >= 0; i--) {
+      const a = song.arrows[i], x = xAt(a.t);
+      if (x > TW + 30 || x < -30 || (judged && judged[i] === 1)) continue;
+      const missed = (judged && judged[i] === 2) || a.t < t - CONFIG.good;
+      arrowShape(x, cy, 22, a.d, missed ? "#57506e" : ARROW_COLORS[a.d], missed ? 0.6 : 1);
+    }
+  }
+  for (let i = trackFx.length - 1; i >= 0; i--) {
+    const f = trackFx[i], age = (now - f.at) / 1000; if (age > 0.5) { trackFx.splice(i, 1); continue; }
+    if (f.j !== "M") { tctx.strokeStyle = ARROW_COLORS[f.d]; tctx.globalAlpha = 1 - age * 2; tctx.lineWidth = 5; tctx.beginPath(); tctx.arc(ringX, cy, 26 + age * 60, 0, Math.PI * 2); tctx.stroke(); tctx.globalAlpha = 1; }
+  }
+  const last = trackFx[trackFx.length - 1];
+  if (last && now - last.at < 450) {
+    const [label, col] = { P: ["PERFECT", "#7dff6a"], G: ["GOOD", "#3dd6ff"], M: ["MISS", "#ff5c8a"] }[last.j];
+    tctx.font = "900 15px system-ui, sans-serif"; tctx.textAlign = "center"; tctx.textBaseline = "middle"; tctx.fillStyle = col; tctx.fillText(label, ringX, 11);
+  }
+  if (me.roundId === r.id && r.phase === "dance") {
+    const st = me.st, mult = Math.min(CONFIG.multMax, 1 + Math.floor(Math.max(0, st.st - 1) / CONFIG.multEvery)), tier = tierOf(st.st);
+    tctx.textAlign = "right"; tctx.textBaseline = "top"; tctx.font = "900 15px ui-monospace, Menlo, Consolas, monospace"; tctx.fillStyle = "#f6f2ff"; tctx.fillText(st.sc.toLocaleString("en-US"), TW - 12, 8);
+    tctx.textBaseline = "bottom"; tctx.font = "800 12px system-ui, sans-serif"; tctx.fillStyle = st.st >= CONFIG.tiers[1] ? "#ffd23f" : "#b0a8d6";
+    tctx.fillText(`${st.st} streak · ${TIER_NAMES[tier]}${mult > 1 ? ` · ×${mult}` : ""}`, TW - 12, TH - 8);
+  }
+}
+let toastTimer = 0;
+function toast(text) { $("toast").textContent = text; $("toast").style.opacity = 1; clearTimeout(toastTimer); toastTimer = setTimeout(() => ($("toast").style.opacity = 0), 1400); }
+function litKey(d) { const b = $("keys").children[d]; if (b) { b.classList.add("lit"); setTimeout(() => b.classList.remove("lit"), 120); } }
+let board = null, boardFor = -1, voteDrawn = "";
+function hud(r, list) {
+  const t = Date.now(), song = songOf(r.seed);
+  $("song").textContent = ATTRACT ? "" : `♪ ${song.name} · ${song.bpm} BPM`;
+  const ranked = [...list].sort((a, b) => b.sc - a.sc);
+  $("ranks").hidden = r.phase === "done";
+  $("ranks").innerHTML = ranked.map((x) => `<div class="${x.mine ? "me" : ""}"><i style="background:${esc(x.color)}"></i><b>${esc(x.mine ? "You" : x.name)}</b><span>${x.st >= CONFIG.tiers[1] ? "🔥" : ""}${x.sc}</span></div>`).join("");
+  const left = r.startAt - t;
+  $("big").textContent = r.phase === "count" && left < 3000 ? String(Math.max(1, Math.ceil(left / 1000))) : r.phase === "dance" && t - r.startAt < 700 && !ATTRACT ? "DANCE!" : "";
+  if (ATTRACT) { $("net").textContent = ""; $("hint").textContent = ""; $("over").hidden = true; $("vote").hidden = true; return; }
+  const n = livePlayers().length;
+  $("net").textContent = netDown ? "Reconnecting…" : net.offline ? "Offline: playing with bots" : `Online · ${n} player${n === 1 ? "" : "s"}${isHost() ? " · you run the show" : ""}`;
+  const how = touchUI ? "Tap the arrow buttons" : "Press ← ↓ ↑ → (or WASD)";
+  $("hint").textContent = r.phase === "count" ? `${how} as each arrow hits the ring.${audio ? "" : touchUI ? " Tap for sound." : " Press a key for sound."}`
+    : r.phase === "dance" && t - r.startAt < 6000 ? (me.late ? "You joined mid-song: dance from here!" : `${how} on the beat! Streaks unlock bigger moves.`) : r.phase === "dance" && !audio ? (touchUI ? "Tap an arrow to turn the music on" : "Press a key to turn the music on") : "";
+  $("hint").style.bottom = ($("pad").offsetHeight + 18) + "px";
+  $("pad").hidden = r.phase === "vote" || r.phase === "done";
+  $("vote").hidden = r.phase !== "vote";
+  if (r.phase === "vote") drawVote(r, false);
+  $("over").hidden = r.phase !== "done";
+  if (r.phase === "done") {
+    if (boardFor !== r.id) { boardFor = r.id; showResults(r); }
+    $("again").textContent = me.ready === r.id ? "Waiting for the others…" : "Play again";
+    $("next").textContent = `Next song in ${Math.max(0, Math.ceil((r.endsAt - t) / 1000))}s`;
+  }
+}
+function drawVote(r, force) {
+  const list = dancers(r), others = list.filter((x) => !x.mine), voted = list.filter((x) => x.f).length;
+  $("voteSub").textContent = `${me.vote ? "Vote cast! You can still change it." : "Tap a dancer (not yourself)."} ${voted}/${list.length} voted · ${Math.max(0, Math.ceil((r.endsAt - Date.now()) / 1000))}s`;
+  const key = r.id + ":" + me.vote + ":" + others.map((x) => x.id + x.sc).join();
+  if (!force && key === voteDrawn) return;
+  voteDrawn = key;
+  $("choices").innerHTML = others.map((x) => `<button data-id="${esc(x.id)}" class="${me.vote === x.id ? "on" : ""}"><i style="background:${esc(x.color)}"></i><span>${esc(x.name)}<small>${x.sc.toLocaleString("en-US")} pts · best streak ${x.mx}</small></span></button>`).join("");
+  for (const b of $("choices").children) b.onclick = () => castVote(b.dataset.id);
+}
+function showResults(r) {
+  const res = r.res || [], top = res[0];
+  $("winner").textContent = !top ? "Song over" : top[0] === net.sessionId ? "You're the best dancer!" : `${top[1]} is the best dancer!`;
+  const tie = top && res[1] && res[1][3] === top[3];
+  $("winSub").textContent = !top ? "" : `${top[3]} vote${top[3] === 1 ? "" : "s"}${tie ? " (won the tie on points)" : ""}`;
+  $("results").innerHTML = res.map(([id, name, color, votes, sc, mx]) => `<li class="${id === net.sessionId ? "me" : ""}"><b style="color:${esc(color)}">●</b> ${esc(id === net.sessionId ? "You" : name)}<span>${votes} ★</span><small>${Number(sc).toLocaleString("en-US")} pts · best streak ${mx}</small></li>`).join("");
+  const list = $("board");
+  if (!board) { list.innerHTML = "<li>Leaderboards need a connection.</li>"; return; }
+  list.innerHTML = "<li>Loading…</li>";
+  const mine = me.roundId === r.id && me.submitted !== r.id ? me.st.sc : 0;
+  me.submitted = r.id;
+  (mine ? board.submit(mine).catch(() => null) : Promise.resolve()).then(() => board.top(10)).then(({ entries }) => {
+    list.innerHTML = entries.length ? entries.map((e) => `<li>${esc(e.username || "Player")}<span>${Number(e.score).toLocaleString("en-US")}</span></li>`).join("") : "<li>No scores yet. Set the first.</li>";
+  }).catch(() => { list.innerHTML = "<li>Couldn't load the leaderboard.</li>"; });
+}
+function playAgain() { const r = round(); if (r && r.phase === "done") { me.ready = r.id; net.me.set("rdy", r.id); $("again").textContent = "Waiting for the others…"; } }
+$("again").onclick = playAgain;
+
+// ── INPUT ───────────────────────────────────────────────────────────────────────────
+addEventListener("keydown", (e) => {
+  if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+  const d = KEYS[e.key.toLowerCase()];
+  if (d !== undefined) { e.preventDefault(); press(d, e.timeStamp); }
+  else if (e.key === " " || e.key === "Enter") { unlockAudio(); if (round()?.phase === "done") { e.preventDefault(); playAgain(); } }
+});
+for (const b of $("keys").children) b.addEventListener("pointerdown", (e) => { e.preventDefault(); press(+b.dataset.d, e.timeStamp); });
+document.addEventListener("pointerdown", () => unlockAudio());
+document.addEventListener("touchmove", (e) => { if (e.target === renderer.domElement || e.target.closest("#pad")) e.preventDefault(); }, { passive: false });
+if (touchUI) $("keys").hidden = false;
+
+// ── MAIN LOOP ───────────────────────────────────────────────────────────────────────
+let last = performance.now(), lastHb = 0, lastHud = 0, lastBeat = -1, lastPhase = "", winnerShown = -1;
+const camPos = new THREE.Vector3(0, 4, 14), camLook = new THREE.Vector3(0, 1.4, 0);
+function frame(now) {
+  const dt = Math.max(0, Math.min(0.05, (now - last) / 1000)); last = now; // the first frame can be stamped before `last`
+  if (now - lastHb > 1000) { lastHb = now; net.me.set("hb", Date.now()); fixColor(); }
+  if (isHost()) hostTick(now); else host.wasHost = false;
+  const r = round();
+  if (r) {
+    if (r.phase !== "done" && r.phase !== "vote" && me.roundId !== r.id) joinRound(r); // a new song, or you just arrived: line up
+    if (r.phase === "dance" && me.roundId === r.id) { autopilot(r); sweepMisses(r); publish(false); }
+    if (lastPhase !== r.phase) { if (r.phase === "done") blip(523, 1046, 0.6, 0.15); lastPhase = r.phase; }
+    scheduleMusic(r);
+    const list = dancers(r);
+    drawStage(r, list, now, dt);
+    drawTrack(r, now);
+    if (now - lastHud > 100) { lastHud = now; hud(r, list); }
+  } else renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+/** Place, animate and light every dancer, then the club around them, then the camera. */
+function drawStage(r, list, now, dt) {
+  const song = songOf(r.seed), t = Date.now() - r.startAt, grooving = r.phase === "dance" || r.phase === "vote" || (r.phase === "count" && t > -song.beat * 4);
+  const beatNo = Math.floor(t / song.beat), beatPhase = grooving ? ((t % song.beat) + song.beat) % song.beat / song.beat : 0, pulse = grooving ? Math.pow(1 - beatPhase, 3) : 0;
+  const portrait = camera.aspect < 0.85, slots = slotsFor(list.length, portrait);
+  const order = [...list].sort((a, b) => (a.mine ? -1 : b.mine ? 1 : a.id < b.id ? -1 : 1));
+  const showcase = r.phase === "vote" || r.phase === "done", seen = new Set();
+  if (grooving) lightFloor(beatNo, pulse);
+  if (beatNo !== lastBeat) { lastBeat = beatNo; if (r.phase === "count" && beatNo < 0 && beatNo >= -3) blip(880, 880, 0.08, 0.12); }
+  order.forEach((x, k) => {
+    const v = viewOf(x.id), s = slots[k]; seen.add(x.id);
+    setColor(v, x.color);
+    if (v.fresh) { v.x = s.x; v.y = s.y; v.z = s.z; v.fresh = false; v.mk = x.mk; }
+    const ease = 1 - Math.pow(0.02, dt); v.x += (s.x - v.x) * ease; v.y += (s.y - v.y) * ease; v.z += (s.z - v.z) * ease;
+    v.g.position.set(v.x, v.y, v.z); v.g.rotation.y = Math.atan2(-v.x * 0.15, 1);
+    if (!x.mine && x.mk !== v.mk) { v.mk = x.mk; if (r.phase === "dance") startMove(v, x.mv, tierOf(x.st), now); } // someone else's new move
+    if (showcase && grooving && (!v.move || now - v.move.at > song.beat * 1.6) && beatPhase < 0.2) startMove(v, (beatNo + k) % 4, tierOf(x.mx), now); // the vote: everyone shows off their best tier
+    poseDancer(v, now, song.beat, beatPhase);
+    const flash = Math.max(0, 1 - (now - v.flash) / 300), fever = (r.phase === "dance" ? tierOf(x.st) : showcase ? tierOf(x.mx) : 0) >= 3;
+    v.disc.material.opacity = 0.18 + flash * 0.5 + (fever ? 0.2 : 0);
+    v.ring.visible = fever; if (fever) { v.ring.scale.setScalar(1 + pulse * 0.25); v.ring.rotation.z += dt * 2; }
+    v.crown.visible = r.phase === "done" && r.win === x.id;
+    if (fever && Math.random() < dt * 3) burst(v.x, v.y + 1.2, v.z, 2, 3);
+    placeTag(v, x.mine ? "You" : x.name + (r.phase === "dance" && x.st >= CONFIG.tiers[1] ? ` 🔥${x.st}` : ""), x.mine, !ATTRACT);
+  });
+  for (const id of [...views.keys()]) if (!seen.has(id)) dropView(id);
+  if (r.phase === "done" && winnerShown !== r.id) { winnerShown = r.id; const w = views.get(r.win); if (w) burst(w.x, w.y + 2.5, w.z, 120, 8); }
+  // the club
+  const tt = now / 1000;
+  ball.rotation.y += dt * 0.6;
+  beams.forEach((b, i) => { b.rotation.z = Math.sin(tt * 0.7 + i * 1.7) * 0.5; b.rotation.x = Math.cos(tt * 0.5 + i) * 0.3; b.material.opacity = 0.06 + pulse * 0.06; });
+  glowA.intensity = 20 + pulse * 40; glowB.intensity = 20 + pulse * 40;
+  glowA.color.set(ARROW_COLORS[mod(beatNo, 4)]); glowB.color.set(ARROW_COLORS[mod(beatNo + 2, 4)]);
+  animateEq(tt, pulse); animateConfetti(dt);
+  // camera: fit the line of dancers above the arrow track, bob gently on the beat; the winner gets a close-up
+  const halfW = Math.max(...slots.map((s) => Math.abs(s.x)), 1) + 1.4, hfov = 2 * Math.atan(Math.tan((camera.fov * Math.PI) / 360) * camera.aspect);
+  let dist = Math.max(7.5, halfW / Math.tan(hfov / 2)), look = new THREE.Vector3(0, portrait ? 0.9 : 1.1, -0.5);
+  if (ATTRACT) dist *= 0.95;
+  const winner = r.phase === "done" && views.get(r.win);
+  if (winner) {
+    dist = camera.aspect < 1 ? 11 : 7; look = new THREE.Vector3(winner.x, winner.y + 1.3, winner.z);
+    const tanV = Math.tan((camera.fov * Math.PI) / 360);
+    if (innerWidth >= 760) look.x += dist * tanV * camera.aspect * 0.42; // card on the right: winner on the left
+    else look.y -= dist * tanV * 0.42; // card at the bottom: winner up top
+  }
+  const sway = Math.sin(tt * 0.35) * (winner ? 1.5 : 1.2);
+  camPos.lerp(V3.set(look.x + sway, look.y + 2.3 + dist * 0.12 + pulse * 0.05, look.z + dist), 1 - Math.pow(0.05, dt)); camLook.lerp(look, 1 - Math.pow(0.05, dt));
+  camera.position.copy(camPos); camera.lookAt(camLook);
+  renderer.render(scene, camera);
+}
+/** Two players picked the same color at once (the joiner's first state can be empty): the later sessionId picks again. */
+function fixColor() {
+  const others = Object.entries(S.entities.players || {}).filter(([id]) => id !== net.sessionId), bots = botColors();
+  if (!others.some(([id, p]) => p.c === myColor && id < net.sessionId) && !bots.includes(myColor)) return; // a bot in your color: you change
+  const taken = new Set([...others.map(([, p]) => p.c), ...bots]), free = COLORS.find((c) => !taken.has(c));
+  if (free) { myColor = free; net.me.set("c", free); }
+}
+
+(async function start() {
+  net = await connect();
+  net.onState((st) => { S = st; });
+  net.onDisconnect(() => { netDown = true; $("net").textContent = "Reconnecting…"; });
+  net.onReconnect(() => { netDown = false; });
+  if (!net.offline && typeof MP !== "undefined") board = MP.auth({ key: MP_CONNECT.key, apiUrl: MP_CONNECT.apiUrl }).leaderboard(CONFIG.board);
+  const taken = new Set([...Object.entries(S.entities.players || {}).filter(([id]) => id !== net.sessionId).map(([, p]) => p.c), ...botColors()]);
+  myColor = COLORS.find((c) => !taken.has(c)) || COLORS[Math.floor(Math.random() * COLORS.length)];
+  net.me.set({ n: myName, c: myColor, hb: Date.now() });
+  if (ATTRACT) { Object.assign(CONFIG, { countdown: 600, resultsMs: 1500, voteMs: 3000, botSkill: [0.85, 0.97] }); $("info").hidden = true; }
+  if (new URLSearchParams(location.search).has("test")) window.__test = { round, dancers, me, press, isHost, net: () => net, views, songOf, castVote, writeRound, botList, camera };
+  fitTrack();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
