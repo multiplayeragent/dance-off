@@ -50,6 +50,7 @@
   .card h3 { margin: 14px 0 4px; font-size: 13px; color: var(--gold); text-align: left; text-transform: uppercase; letter-spacing: .06em; }
   .card ol { margin: 0; padding-left: 24px; font-size: 14px; text-align: left; }
   .card li { padding: 2px 0; } .card li span { float: right; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .card li.msg { list-style: none; margin-left: -24px; color: var(--dim); } /* a status line, not a numbered entry */
   .card li small { display: block; color: var(--dim); font-size: 12px; } .card li.me { color: var(--gold); }
   .card p { margin: 10px 0 0; font-size: 13px; opacity: .8; }
   button.go { width: 100%; min-height: 48px; margin-top: 14px; border: 0; border-radius: 12px; background: var(--pink); color: #fff; font: 800 17px system-ui, sans-serif; cursor: pointer; }
@@ -69,7 +70,7 @@
 <div id="vote" hidden><h2>Who danced best?</h2><p id="voteSub"></p><div id="choices"></div></div>
 <div id="over" hidden><div class="card">
   <h2 id="winner"></h2><div class="sub" id="winSub"></div><ol id="results"></ol>
-  <h3>High scores</h3><ol id="board"><li>Loading…</li></ol>
+  <h3>High scores</h3><ol id="board"><li class="msg">Loading…</li></ol>
   <button class="go" id="again">Play again</button><p id="next"></p>
 </div></div>
 <script type="module">
@@ -493,7 +494,8 @@ function driveBots(r) {
   for (const b of host.bots) {
     if (!b.ni) while (b.ni < chart.length && chart[b.ni].t < t - CONFIG.good) b.ni++; // a bot added mid-song starts here
     while (b.ni < chart.length && chart[b.ni].t + 30 <= t) {
-      const x = Math.random(), miss = (1 - b.k) * 0.28, perf = b.k * 0.7;
+      const busy = densAt(Math.floor(chart[b.ni].t / (16 * songOf(r.seed).step))) / 3; // 0.33 (easy) .. 1 (busiest)
+      const x = Math.random(), miss = (1 - b.k) * 0.28 * (0.5 + busy) + (b.m && b.st === 0 ? 0.12 : 0), perf = b.k * 0.7; // a miss can throw it off the next arrow too
       const j = x < miss ? "M" : x < miss + perf ? "P" : "G";
       score(b, j); b.mv = j === "M" ? -1 : chart[b.ni].d; b.mk++; b.ni++;
     }
@@ -506,9 +508,9 @@ function botVotes(r, now) {
     if (b.f) continue;
     if (!host.voteAt.has(b.i)) host.voteAt.set(b.i, now + 2000 + Math.random() * 7000);
     if (now < host.voteAt.get(b.i)) continue;
-    const pool = list.filter((x) => x.id !== b.i), total = pool.reduce((s, x) => s + x.sc + 3000, 0);
+    const pool = list.filter((x) => x.id !== b.i), weight = (x) => (x.sc + 2000) ** 2, total = pool.reduce((s, x) => s + weight(x), 0); // mostly the better dancers, not always
     let roll = Math.random() * total;
-    b.f = (pool.find((x) => (roll -= x.sc + 3000) <= 0) || pool[0] || { id: "" }).id;
+    b.f = (pool.find((x) => (roll -= weight(x)) <= 0) || pool[0] || { id: "" }).id;
   }
 }
 /** Everyone dancing this round: { id, name, color, sc, st, mx, p, g, m, mv, mk, mine, bot, f (vote) }. */
@@ -654,7 +656,7 @@ function drawTrack(r, now) {
   if (!TW) fitTrack();
   tctx.clearRect(0, 0, TW, TH);
   if (!r) return;
-  const song = songOf(r.seed), t = Date.now() - r.startAt - (audio ? (audio.outputLatency || 0) * 1000 : 0), ringX = Math.min(70, TW * 0.14), cy = TH / 2, span = TW - ringX - 16;
+  const song = songOf(r.seed), t = Date.now() - r.startAt, ringX = Math.min(70, TW * 0.14), cy = TH / 2, span = TW - ringX - 16;
   const xAt = (at) => ringX + ((at - t) / CONFIG.leadMs) * span;
   for (let b = Math.ceil(t / song.beat); b * song.beat < t + CONFIG.leadMs; b++) { tctx.fillStyle = b % 4 ? "#ffffff12" : "#ffffff30"; tctx.fillRect(xAt(b * song.beat), 8, 2, TH - 16); }
   const pulse = t > 0 ? Math.pow(1 - ((t % song.beat) / song.beat), 3) : 0;
@@ -729,13 +731,13 @@ function showResults(r) {
   $("winSub").textContent = !top ? "" : `${top[3]} vote${top[3] === 1 ? "" : "s"}${tie ? " (won the tie on points)" : ""}`;
   $("results").innerHTML = res.map(([id, name, color, votes, sc, mx]) => `<li class="${id === net.sessionId ? "me" : ""}"><b style="color:${esc(color)}">●</b> ${esc(id === net.sessionId ? "You" : name)}<span>${votes} ★</span><small>${Number(sc).toLocaleString("en-US")} pts · best streak ${mx}</small></li>`).join("");
   const list = $("board");
-  if (!board) { list.innerHTML = "<li>Leaderboards need a connection.</li>"; return; }
-  list.innerHTML = "<li>Loading…</li>";
+  if (!board) { list.innerHTML = '<li class="msg">Leaderboards need a connection.</li>'; return; }
+  list.innerHTML = '<li class="msg">Loading…</li>';
   const mine = me.roundId === r.id && me.submitted !== r.id ? me.st.sc : 0;
   me.submitted = r.id;
   (mine ? board.submit(mine).catch(() => null) : Promise.resolve()).then(() => board.top(10)).then(({ entries }) => {
-    list.innerHTML = entries.length ? entries.map((e) => `<li>${esc(e.username || "Player")}<span>${Number(e.score).toLocaleString("en-US")}</span></li>`).join("") : "<li>No scores yet. Set the first.</li>";
-  }).catch(() => { list.innerHTML = "<li>Couldn't load the leaderboard.</li>"; });
+    list.innerHTML = entries.length ? entries.map((e) => `<li>${esc(e.username || "Player")}<span>${Number(e.score).toLocaleString("en-US")}</span></li>`).join("") : '<li class="msg">No scores yet. Set the first.</li>';
+  }).catch(() => { list.innerHTML = `<li class="msg">Couldn't load the leaderboard.</li>`; });
 }
 function playAgain() { const r = round(); if (r && r.phase === "done") { me.ready = r.id; net.me.set("rdy", r.id); $("again").textContent = "Waiting for the others…"; } }
 $("again").onclick = playAgain;
