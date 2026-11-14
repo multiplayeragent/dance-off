@@ -6,7 +6,7 @@
 <title>Dance Off</title>
 <style>
   :root { --ink: #f6f2ff; --dim: #b0a8d6; --gold: #ffd23f; --pink: #ff5c8a; }
-  html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; background: #0b0718; }
+  html, body { -webkit-tap-highlight-color: transparent; /* no blue flash on every tap */ margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; background: #0b0718; }
   body { font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); user-select: none; -webkit-user-select: none; }
   canvas#world { display: block; touch-action: none; }
   [hidden] { display: none !important; }
